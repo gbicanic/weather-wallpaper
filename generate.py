@@ -21,6 +21,14 @@ CITIES = [
     {"name": "Harrow on the Hill", "lat": 51.5714, "lon": -0.3337},
 ]
 
+# Compact side-by-side panel for the Sony TV's on-screen overlay app (overlay.png).
+OVERLAY_CITIES = [
+    {"name": "Dubai", "lat": 25.2048, "lon": 55.2708},
+    {"name": "Harrow", "lat": 51.5714, "lon": -0.3337},
+    {"name": "Zagreb", "lat": 45.8150, "lon": 15.9819},
+]
+OVERLAY_W, OVERLAY_H = 1000, 380
+
 W, H = 1920, 1080
 PHOTO = Path(__file__).with_name("background.jpg")
 PHOTO_CREDIT = ""  # shown bottom-right when set, e.g. for a licensed photo
@@ -85,9 +93,9 @@ def font(size, bold=False):
     return ImageFont.load_default(size)
 
 
-def fetch():
-    lats = ",".join(str(c["lat"]) for c in CITIES)
-    lons = ",".join(str(c["lon"]) for c in CITIES)
+def fetch(cities=CITIES):
+    lats = ",".join(str(c["lat"]) for c in cities)
+    lons = ",".join(str(c["lon"]) for c in cities)
     url = (
         "https://api.open-meteo.com/v1/forecast"
         f"?latitude={lats}&longitude={lons}"
@@ -266,11 +274,58 @@ def draw_forecast(d, results):
     d.line((divider_x, top + 5, divider_x, top + 235), fill=(60, 52, 70), width=2)
 
 
+def render_overlay(results, out):
+    """Transparent panel: one column per city with now + next three days."""
+    img = Image.new("RGBA", (OVERLAY_W, OVERLAY_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((0, 0, OVERLAY_W - 1, OVERLAY_H - 1), radius=28, fill=(10, 8, 14, 185))
+
+    f_city = font(34, bold=True)
+    f_time = font(22)
+    f_temp = font(76, bold=True)
+    f_cond = font(26)
+    f_small = font(22)
+
+    col_w, pad = (OVERLAY_W - 40) // len(OVERLAY_CITIES), 20
+    for i, (city, res) in enumerate(zip(OVERLAY_CITIES, results)):
+        cur, daily = res["current"], res["daily"]
+        label, kind = WMO.get(cur["weather_code"], ("—", "cloud"))
+        local = datetime.fromisoformat(cur["time"])
+        x = pad + i * col_w + 16
+
+        if i:
+            d.line((x - 16, 24, x - 16, OVERLAY_H - 24), fill=(70, 62, 80, 255), width=2)
+        d.text((x, 18), city["name"], font=f_city, fill=TEXT)
+        d.text((x, 60), f"{local:%a %-I:%M %p}", font=f_time, fill=MUTED)
+
+        temp = f"{round(cur['temperature_2m'])}°"
+        d.text((x, 86), temp, font=f_temp, fill=TEXT)
+        draw_icon(d, kind, x + d.textlength(temp, font=f_temp) + 50, 136, 40, bool(cur["is_day"]))
+
+        hi, lo = round(daily["temperature_2m_max"][0]), round(daily["temperature_2m_min"][0])
+        d.text((x, 182), label, font=f_cond, fill=TEXT)
+        d.text((x, 214), f"H {hi}°  L {lo}°", font=f_small, fill=MUTED)
+
+        for j in range(1, 4):
+            dx = x + (j - 1) * 96
+            day = datetime.fromisoformat(daily["time"][j])
+            _, dkind = WMO.get(daily["weather_code"][j], ("—", "cloud"))
+            d.text((dx, 258), f"{day:%a}", font=f_small, fill=MUTED)
+            draw_icon(d, dkind, dx + 22, 308, 20, True)
+            dhi, dlo = round(daily["temperature_2m_max"][j]), round(daily["temperature_2m_min"][j])
+            d.text((dx, 334), f"{dhi}°/{dlo}°", font=f_small, fill=TEXT)
+
+    img.save(out, "PNG", optimize=True)
+
+
 def main():
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "wallpaper.png")
     out.parent.mkdir(parents=True, exist_ok=True)
     render(fetch(), out)
     print(f"wrote {out}")
+    overlay = out.with_name("overlay.png")
+    render_overlay(fetch(OVERLAY_CITIES), overlay)
+    print(f"wrote {overlay}")
 
 
 if __name__ == "__main__":

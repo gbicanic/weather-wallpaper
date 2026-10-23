@@ -18,3 +18,13 @@ repository owner's permission (cropped, resized, blurred and darkened).
 
 Note: GitHub pauses scheduled workflows in a repository after 60 days without
 any activity. If the picture stops updating, open the **Actions** tab and re-enable it.
+
+## TV overlay
+
+The job also publishes `overlay.png`, a transparent 1000×380 panel with Dubai, Harrow and
+Zagreb side by side (now + next 3 days), at:
+
+    https://<user>.github.io/<repo>/overlay.png
+
+The `tv-overlay` Android app shows it in the top-left of the Sony TV's home screen.
+Cities are set in `OVERLAY_CITIES` in `generate.py`.
