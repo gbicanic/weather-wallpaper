@@ -10,6 +10,7 @@ Usage: python generate.py [output.png]
 import json
 import math
 import sys
+import time
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -104,9 +105,15 @@ def fetch(cities=CITIES):
         "&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max"
         "&timezone=auto&forecast_days=4"
     )
-    with urllib.request.urlopen(url, timeout=30) as resp:
-        data = json.load(resp)
-    return data if isinstance(data, list) else [data]
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(url, timeout=30) as resp:
+                data = json.load(resp)
+            return data if isinstance(data, list) else [data]
+        except OSError:
+            if attempt == 3:
+                raise
+            time.sleep(10 * (attempt + 1))
 
 
 def draw_sun(d, cx, cy, r, moon=False):
