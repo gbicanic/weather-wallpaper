@@ -23,13 +23,13 @@ CITIES = [
 
 W, H = 1920, 1080
 PHOTO = Path(__file__).with_name("background.jpg")
-PHOTO_CREDIT = "Photo: Harrow on the Hill from Northwick Park · Simon from London · CC BY 2.0"
-PHOTO_BLUR = 6
+PHOTO_CREDIT = ""  # shown bottom-right when set, e.g. for a licensed photo
+PHOTO_BLUR = 3
 PHOTO_DIM = 0.55  # 0 = photo as-is, 1 = black
 BG_TOP = (14, 10, 18)
 BG_BOTTOM = (4, 3, 6)
 TEXT = (236, 232, 240)
-MUTED = (150, 144, 160)
+MUTED = (196, 192, 204)
 ACCENT = (255, 196, 92)
 CLOUD = (190, 196, 210)
 RAIN = (110, 170, 255)
@@ -155,11 +155,31 @@ def draw_icon(d, kind, cx, cy, s, is_day):
             )
 
 
+def darken_text_bands(img, strength=150):
+    """Extra shade behind the current-weather block (top) and forecast strip (bottom)."""
+    alpha = Image.new("L", (W, H), 0)
+    ad = ImageDraw.Draw(alpha)
+    for y in range(H):
+        if y < 440:
+            a = strength
+        elif y < 560:
+            a = strength * (560 - y) / 120
+        elif y < 740:
+            a = 0
+        elif y < 800:
+            a = strength * (y - 740) / 60
+        else:
+            a = strength
+        ad.line((0, y, W, y), fill=int(a))
+    return Image.composite(Image.new("RGB", (W, H), BG_BOTTOM), img, alpha)
+
+
 def background():
     if PHOTO.exists():
         photo = Image.open(PHOTO).convert("RGB").resize((W, H))
         photo = photo.filter(ImageFilter.GaussianBlur(PHOTO_BLUR))
-        return Image.blend(photo, Image.new("RGB", (W, H), BG_BOTTOM), PHOTO_DIM)
+        photo = Image.blend(photo, Image.new("RGB", (W, H), BG_BOTTOM), PHOTO_DIM)
+        return darken_text_bands(photo)
     img = Image.new("RGB", (W, H), BG_TOP)
     d = ImageDraw.Draw(img)
     for y in range(H):
@@ -209,7 +229,7 @@ def render(results, out):
 
     draw_forecast(d, results)
 
-    if PHOTO.exists():
+    if PHOTO.exists() and PHOTO_CREDIT:
         f_credit = font(18)
         cw = d.textlength(PHOTO_CREDIT, font=f_credit)
         d.text((W - cw - 24, H - 34), PHOTO_CREDIT, font=f_credit, fill=MUTED)
