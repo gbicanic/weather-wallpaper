@@ -14,7 +14,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 CITIES = [
     {"name": "Dubai", "lat": 25.2048, "lon": 55.2708},
@@ -22,6 +22,10 @@ CITIES = [
 ]
 
 W, H = 1920, 1080
+PHOTO = Path(__file__).with_name("background.jpg")
+PHOTO_CREDIT = "Photo: Harrow on the Hill from Northwick Park · Simon from London · CC BY 2.0"
+PHOTO_BLUR = 6
+PHOTO_DIM = 0.55  # 0 = photo as-is, 1 = black
 BG_TOP = (14, 10, 18)
 BG_BOTTOM = (4, 3, 6)
 TEXT = (236, 232, 240)
@@ -99,9 +103,14 @@ def fetch():
 
 def draw_sun(d, cx, cy, r, moon=False):
     if moon:
-        d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(230, 226, 210))
+        # Cut the crescent on its own transparent layer so whatever is behind shows through.
+        size = 2 * r + 2
+        layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        ld = ImageDraw.Draw(layer)
+        ld.ellipse((0, 0, 2 * r, 2 * r), fill=(230, 226, 210, 255))
         o = r * 0.55
-        d.ellipse((cx - r + o, cy - r - o * 0.3, cx + r + o, cy + r - o * 0.3), fill=BG_TOP)
+        ld.ellipse((o, -o * 0.3, 2 * r + o, 2 * r - o * 0.3), fill=(0, 0, 0, 0))
+        d._image.paste(layer, (int(cx - r), int(cy - r)), layer)
         return
     d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=ACCENT)
     for i in range(8):
@@ -147,6 +156,10 @@ def draw_icon(d, kind, cx, cy, s, is_day):
 
 
 def background():
+    if PHOTO.exists():
+        photo = Image.open(PHOTO).convert("RGB").resize((W, H))
+        photo = photo.filter(ImageFilter.GaussianBlur(PHOTO_BLUR))
+        return Image.blend(photo, Image.new("RGB", (W, H), BG_BOTTOM), PHOTO_DIM)
     img = Image.new("RGB", (W, H), BG_TOP)
     d = ImageDraw.Draw(img)
     for y in range(H):
@@ -195,6 +208,11 @@ def render(results, out):
     d.line((divider_x, top + 10, divider_x, top + 340), fill=(60, 52, 70), width=2)
 
     draw_forecast(d, results)
+
+    if PHOTO.exists():
+        f_credit = font(18)
+        cw = d.textlength(PHOTO_CREDIT, font=f_credit)
+        d.text((W - cw - 24, H - 34), PHOTO_CREDIT, font=f_credit, fill=MUTED)
 
     img.save(out, "PNG", optimize=True)
 
