@@ -13,7 +13,7 @@ KEYSTORE="${KEYSTORE:-$HOME/.android/tv-overlay.keystore}"
 rm -rf build && mkdir -p build/classes build/dex
 
 "$BT/aapt2" link -o build/unsigned.apk -I "$JAR" --manifest AndroidManifest.xml \
-    --min-sdk-version 30 --target-sdk-version 31 --version-code 1 --version-name 1.0
+    --min-sdk-version 30 --target-sdk-version 31 --version-code 2 --version-name 2.0
 
 "$JAVA_HOME/bin/javac" -source 1.8 -target 1.8 -bootclasspath "$JAR" -nowarn \
     -d build/classes src/com/gbicanic/tvoverlay/*.java

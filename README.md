@@ -26,5 +26,8 @@ Zagreb side by side (now + next 3 days), at:
 
     https://<user>.github.io/<repo>/overlay.png
 
-The `tv-overlay` Android app shows it in the top-left of the Sony TV's home screen.
-Cities are set in `OVERLAY_CITIES` in `generate.py`.
+Since version 2 the `tv-overlay` Android app no longer uses that picture: it fetches the
+forecast from Open-Meteo itself every 30 minutes and draws the same panel on the TV, with
+each city's local time redrawn every minute (GitHub's scheduled runs can lag by hours).
+Its cities are set in `tv-overlay/src/com/gbicanic/tvoverlay/WeatherPanel.java`; rebuild
+with `tv-overlay/build.sh` and install with `adb install -r tv-overlay/tv-overlay.apk`.

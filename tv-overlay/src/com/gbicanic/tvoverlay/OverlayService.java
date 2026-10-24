@@ -11,7 +11,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.os.Handler;
@@ -23,25 +22,22 @@ import android.view.Gravity;
 import android.view.WindowManager;
 import android.widget.ImageView;
 
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 
 /**
- * Shows the published weather panel in the top-left corner while the Projectivy home
+ * Shows a live weather panel (see WeatherPanel) in the top-left corner while the Projectivy home
  * screen is in front, and hides it everywhere else (apps, screensaver, screen off).
  */
 public class OverlayService extends Service {
     private static final String TAG = "TvOverlay";
-    private static final String IMAGE_URL = "https://gbicanic.github.io/weather-wallpaper/overlay.png";
     private static final String HOME_ACTIVITY = "com.spocky.projengmenu.ui.home.MainActivity";
 
     private static final long POLL_MS = 1500;
     private static final long REFRESH_MS = 30 * 60 * 1000;
     private static final long RETRY_MS = 60 * 1000;
+    private static final long REDRAW_MS = 60 * 1000;
 
-    // Panel geometry in 1920x1080 screen units, matching overlay.png and the home layout.
-    private static final int PANEL_X = 40, PANEL_Y = 40, PANEL_W = 1000, PANEL_H = 380;
+    // Panel position in 1920x1080 screen units, clear of the clock and the app grid.
+    private static final int PANEL_X = 40, PANEL_Y = 40;
 
     private Handler handler;
     private WindowManager windowManager;
@@ -49,10 +45,12 @@ public class OverlayService extends Service {
     private PowerManager power;
     private ImageView view;
     private Bitmap panel;
+    private WeatherPanel.City[] cities;
 
     private boolean shown;
     private boolean dreaming;
     private long nextFetchAt;
+    private long nextRedrawAt;
     private long lastEventAt;
     private String frontActivity = HOME_ACTIVITY;
 
@@ -61,8 +59,10 @@ public class OverlayService extends Service {
         public void run() {
             updateFrontActivity();
             boolean wanted = HOME_ACTIVITY.equals(frontActivity) && power.isInteractive() && !dreaming;
+            long now = System.currentTimeMillis();
+            if (cities != null && now >= nextRedrawAt) redraw(now);
             if (wanted && panel != null) show(); else hide();
-            if (System.currentTimeMillis() >= nextFetchAt) fetch();
+            if (now >= nextFetchAt) fetch();
             handler.postDelayed(this, POLL_MS);
         }
     };
@@ -141,8 +141,8 @@ public class OverlayService extends Service {
         if (shown) return;
         Rect screen = windowManager.getCurrentWindowMetrics().getBounds();
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                screen.width() * PANEL_W / 1920,
-                screen.height() * PANEL_H / 1080,
+                screen.width() * WeatherPanel.W / 1920,
+                screen.height() * WeatherPanel.H / 1080,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -165,35 +165,31 @@ public class OverlayService extends Service {
         shown = false;
     }
 
+    /** Redraws the panel from the last forecast, so each city's local time stays current. */
+    private void redraw(long now) {
+        panel = WeatherPanel.render(cities, now);
+        view.setImageBitmap(panel);
+        nextRedrawAt = now - now % REDRAW_MS + REDRAW_MS;
+    }
+
     private void fetch() {
-        long now = System.currentTimeMillis();
-        nextFetchAt = now + REFRESH_MS;
+        nextFetchAt = System.currentTimeMillis() + REFRESH_MS;
         // Anonymous classes, not lambdas: android.jar has no LambdaMetafactory for javac.
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    HttpURLConnection conn = (HttpURLConnection) new URL(IMAGE_URL + "?t=" + now).openConnection();
-                    conn.setUseCaches(false);
-                    conn.setConnectTimeout(15000);
-                    conn.setReadTimeout(30000);
-                    final Bitmap bitmap;
-                    try (InputStream in = conn.getInputStream()) {
-                        bitmap = BitmapFactory.decodeStream(in);
-                    } finally {
-                        conn.disconnect();
-                    }
-                    if (bitmap == null) throw new IllegalStateException("not an image");
+                    final WeatherPanel.City[] fresh = WeatherPanel.fetch();
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            panel = bitmap;
-                            view.setImageBitmap(bitmap);
+                            cities = fresh;
+                            redraw(System.currentTimeMillis());
                         }
                     });
-                    Log.i(TAG, "Panel updated");
+                    Log.i(TAG, "Forecast updated");
                 } catch (Exception e) {
-                    Log.w(TAG, "Panel download failed, retrying soon", e);
+                    Log.w(TAG, "Forecast download failed, retrying soon", e);
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
