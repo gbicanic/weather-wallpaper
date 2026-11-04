@@ -13,6 +13,7 @@ import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.media.AudioManager;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -25,7 +26,8 @@ import android.widget.ImageView;
 
 /**
  * Shows a live weather panel (see WeatherPanel) in the top-left corner while the Projectivy home
- * screen is in front, and hides it everywhere else (apps, screensaver, screen off).
+ * screen is in front, and hides it everywhere else (apps, screensaver, screen off). While the home
+ * screen is in front it also plays Otvoreni radio (see Radio), stopping as soon as anything else is.
  */
 public class OverlayService extends Service {
     private static final String TAG = "TvOverlay";
@@ -35,6 +37,10 @@ public class OverlayService extends Service {
     private static final long REFRESH_MS = 30 * 60 * 1000;
     private static final long RETRY_MS = 60 * 1000;
     private static final long REDRAW_MS = 60 * 1000;
+    // Home screen must stay in front this long before the radio starts (skips quick passes through it).
+    private static final long RADIO_DELAY_MS = 5000;
+    // The radio always starts at this TV/Sonos volume (0-100 scale).
+    private static final int RADIO_VOLUME = 8;
 
     // Panel position in 1920x1080 screen units, clear of the clock and the app grid.
     private static final int PANEL_X = 40, PANEL_Y = 40;
@@ -46,6 +52,11 @@ public class OverlayService extends Service {
     private ImageView view;
     private Bitmap panel;
     private WeatherPanel.City[] cities;
+    private Radio radio;
+    private AudioManager audio;
+    private long homeSince;
+    private boolean radioOn;
+    private int volumeBeforeRadio = -1;
 
     private boolean shown;
     private boolean dreaming;
@@ -62,6 +73,13 @@ public class OverlayService extends Service {
             long now = System.currentTimeMillis();
             if (cities != null && now >= nextRedrawAt) redraw(now);
             if (wanted && panel != null) show(); else hide();
+            if (wanted) {
+                if (homeSince == 0) homeSince = now;
+                if (now - homeSince >= RADIO_DELAY_MS && !radioOn) startRadio();
+            } else {
+                homeSince = 0;
+                if (radioOn) stopRadio();
+            }
             if (now >= nextFetchAt) fetch();
             handler.postDelayed(this, POLL_MS);
         }
@@ -78,6 +96,8 @@ public class OverlayService extends Service {
     public void onCreate() {
         super.onCreate();
         handler = new Handler(Looper.getMainLooper());
+        radio = new Radio();
+        audio = getSystemService(AudioManager.class);
         windowManager = getSystemService(WindowManager.class);
         usageStats = getSystemService(UsageStatsManager.class);
         power = getSystemService(PowerManager.class);
@@ -103,6 +123,7 @@ public class OverlayService extends Service {
     public void onDestroy() {
         handler.removeCallbacks(poll);
         unregisterReceiver(dreamReceiver);
+        if (radioOn) stopRadio();
         hide();
         super.onDestroy();
     }
@@ -119,8 +140,36 @@ public class OverlayService extends Service {
         return new Notification.Builder(this, "overlay")
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("Weather overlay")
-                .setContentText("Showing the forecast on the home screen")
+                .setContentText("Forecast and Otvoreni radio on the home screen")
                 .build();
+    }
+
+    /** Sets the radio volume, remembering the previous one so films get their volume back. */
+    private void startRadio() {
+        radioOn = true;
+        volumeBeforeRadio = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+        setVolume(RADIO_VOLUME);
+        Log.i(TAG, "Radio on: volume " + volumeBeforeRadio + " -> " + audio.getStreamVolume(AudioManager.STREAM_MUSIC));
+        radio.start();
+    }
+
+    private void stopRadio() {
+        radioOn = false;
+        radio.stop();
+        Log.i(TAG, "Radio off at volume " + audio.getStreamVolume(AudioManager.STREAM_MUSIC));
+        // Put the old volume back, unless it was changed while the radio played.
+        if (volumeBeforeRadio >= 0 && audio.getStreamVolume(AudioManager.STREAM_MUSIC) == RADIO_VOLUME) {
+            setVolume(volumeBeforeRadio);
+        }
+        volumeBeforeRadio = -1;
+    }
+
+    private void setVolume(int volume) {
+        try {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Could not set volume", e);
+        }
     }
 
     /** Tracks the most recently resumed activity from usage events. */

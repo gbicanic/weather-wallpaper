@@ -14,6 +14,7 @@
 
     <application
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
         android:label="TV Weather Overlay">
 
         <!-- No launcher category on purpose: the app never appears as a tile. -->
