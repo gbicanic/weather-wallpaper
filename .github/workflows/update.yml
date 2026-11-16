@@ -29,9 +29,12 @@ jobs:
           python-version: "3.12"
       - run: pip install Pillow==11.3.0
       - run: python generate.py site/wallpaper.png
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - if: hashFiles('site/overlay.png') != ''
+        uses: actions/configure-pages@v5
+      - if: hashFiles('site/overlay.png') != ''
+        uses: actions/upload-pages-artifact@v3
         with:
           path: site
       - id: deploy
+        if: hashFiles('site/overlay.png') != ''
         uses: actions/deploy-pages@v4

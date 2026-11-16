@@ -328,10 +328,17 @@ def render_overlay(results, out):
 def main():
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "wallpaper.png")
     out.parent.mkdir(parents=True, exist_ok=True)
-    render(fetch(), out)
+    try:
+        main_data, overlay_data = fetch(), fetch(OVERLAY_CITIES)
+    except OSError as e:
+        # Weather service unreachable: write nothing, so the workflow skips
+        # publishing and the page keeps the last good wallpaper.
+        print(f"::warning::weather fetch failed, keeping current wallpaper: {e}")
+        return
+    render(main_data, out)
     print(f"wrote {out}")
     overlay = out.with_name("overlay.png")
-    render_overlay(fetch(OVERLAY_CITIES), overlay)
+    render_overlay(overlay_data, overlay)
     print(f"wrote {overlay}")
 
 
