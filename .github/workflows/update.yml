@@ -19,9 +19,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,12 +28,25 @@ jobs:
           python-version: "3.12"
       - run: pip install Pillow==11.3.0
       - run: python generate.py site/wallpaper.png
-      - if: hashFiles('site/overlay.png') != ''
+      - id: check
+        run: |
+          if [ -f site/overlay.png ]; then echo "ready=true" >> "$GITHUB_OUTPUT"; else echo "ready=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.check.outputs.ready == 'true'
         uses: actions/configure-pages@v5
-      - if: hashFiles('site/overlay.png') != ''
+      - if: steps.check.outputs.ready == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
+
+  # Deploy runs as its own job: deploying in the same job as the upload
+  # often failed with "No artifacts named github-pages were found".
+  deploy:
+    needs: build
+    if: needs.build.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - id: deploy
-        if: hashFiles('site/overlay.png') != ''
         uses: actions/deploy-pages@v4
